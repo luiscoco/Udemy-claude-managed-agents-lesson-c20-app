@@ -42,28 +42,94 @@ CLAUDE_MANAGED_ENVIRONMENT_ID=your_environment_id
 PORT=3020
 ```
 
-## How the application was developed
+## How the app was build
 
-The browser collects inputs; the Node host validates requests; the lesson implementation produces observable evidence. The architecture page walks through the real source with numbered steps, prerequisite configuration, source filenames and code excerpts.
+### 1. Validate the registered custom-tool contract
 
-### Lesson implementation
+Only lookup_task with a task_N identifier is admitted. Schema validation happens before the host-owned record lookup.
 
-[src/lesson.ts](https://github.com/luiscoco/Udemy-claude-managed-agents-lesson-c20-app/blob/main/src/lesson.ts)
+Source: [src/lesson.ts](src/lesson.ts#L13)
 
 ```typescript
-  async run(input) {
-
-if(text(input,"tool")!=="lookup_task"||!/^task_[0-9]+$/.test(text(input,"taskId")))return report("rejected","Tool name or input schema is invalid",{},["Dispatch only a registered tool","Validate before querying"]);
-const records=[{id:"task_1",owner:"demo-user",title:"Review Aurora"},{id:"task_2",owner:"other-user",title:"Private task"}];
-const task=records.find(t=>t.id===text(input,"taskId")&&t.owner==="demo-user");
-if(!task)return report("rejected","Task is unavailable to the host's demo principal",{},["Use server-owned identity","Filter ownership in the lookup"]);
-return report("passed","Returned the owned task through a custom-result plan",{title:task.title,result:{type:"user.custom_tool_result",custom_tool_use_id:"sevt_lookup",content:task}},["Validate the request","Query the authenticated owner's task list","Bind the result to the request event ID"]);
-
-  }
-};
+if (
+  text(input, "tool") !== "lookup_task" ||
+  !/^task_[0-9]+$/.test(text(input, "taskId"))
+)
+  return report("rejected", "Tool name or input schema is invalid", {}, [
+    "Dispatch only a registered tool",
+    "Validate before querying",
+  ]);
 ```
 
-Read the architecture page for the remaining source excerpts and explanations, including input handling and optional provider behavior. The diagram describes this application, rather than implying that an external integration has been implemented.
+### 2. Apply ownership during lookup
+
+The seeded records include another user’s task. Matching both task ID and the fixed demo principal prevents that record from being returned merely because its ID is known.
+
+Source: [src/lesson.ts](src/lesson.ts#L14) · selected statements
+
+```typescript
+const records = [
+  { id: "task_1", owner: "demo-user", title: "Review Aurora" },
+  { id: "task_2", owner: "other-user", title: "Private task" },
+];
+
+const task = records.find(
+  (t) => t.id === text(input, "taskId") && t.owner === "demo-user",
+);
+
+if (!task)
+  return report(
+    "rejected",
+    "Task is unavailable to the host's demo principal",
+    {},
+    ["Use server-owned identity", "Filter ownership in the lookup"],
+  );
+```
+
+### 3. Correlate the custom-result plan
+
+The selected task is wrapped in user.custom_tool_result with custom_tool_use_id. This is a local result envelope; the sample does not dispatch it to a remote session.
+
+Source: [src/lesson.ts](src/lesson.ts#L17)
+
+```typescript
+return report(
+  "passed",
+  "Returned the owned task through a custom-result plan",
+  {
+    title: task.title,
+    result: {
+      type: "user.custom_tool_result",
+      custom_tool_use_id: "sevt_lookup",
+      content: task,
+    },
+  },
+  [
+    "Validate the request",
+    "Query the authenticated owner's task list",
+    "Bind the result to the request event ID",
+  ],
+);
+```
+
+### Check your understanding
+
+Run **Look up an owned task** in the application. Compare the result with these scenario expectations:
+
+```json
+{
+  "input": {
+    "tool": "lookup_task",
+    "taskId": "task_1"
+  },
+  "expectedOutcome": "passed",
+  "checkEvidence": {
+    "title": "Review Aurora"
+  }
+}
+```
+
+Then try **Reject a foreign task**. Its expected outcome is `rejected`; identify the condition or evidence field that explains the difference.
 
 ## Validation
 
