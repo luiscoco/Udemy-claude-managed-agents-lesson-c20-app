@@ -1,0 +1,29 @@
+{
+  "source": "live-provider-commentary",
+  "sessionId": "sesn_01DRJVneN2Sy8972m1FdBEwa",
+  "answer": "This local experiment demonstrates a simulated custom tool flow where a host environment intercepts a tool call (`sevt_lookup`) and returns a pre-defined result rather than executing real remote logic. The outcome shows a task record (\"Review Aurora\") being bound to a request event ID through three conceptual steps: validation, owner-scoped querying, and result binding. It is purely illustrative data showing how a host *could* answer custom tool calls locally, with no actual tool execution or remote system involved.",
+  "stopReason": "end_turn",
+  "eventTypes": [
+    "session.status_running",
+    "session.thread_status_running",
+    "user.message",
+    "span.model_request_start",
+    "agent.thinking",
+    "agent.message",
+    "span.model_request_end",
+    "session.thread_status_idle",
+    "session.usage",
+    "session.status_idle"
+  ],
+  "requestUsage": [
+    {
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 0,
+      "input_tokens": 618,
+      "output_tokens": 138,
+      "speed": "standard"
+    }
+  ],
+  "experimentHash": "7bc28f0d17a8b5ca065adbb32422ba3000c21988499b5e1d4f200d70be85efe3",
+  "scope": "A real text-only model response about the local experiment. External integrations and the experiment's correctness are not certified by this response."
+}

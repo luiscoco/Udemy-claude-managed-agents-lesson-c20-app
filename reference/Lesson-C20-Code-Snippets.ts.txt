@@ -1,0 +1,48 @@
+import Anthropic from "@anthropic-ai/sdk";
+import { z } from "zod";
+import type { BetaManagedAgentsSessionEvent as Event } from "@anthropic-ai/sdk/resources/beta/sessions/events";
+export const LookupInput = z.strictObject({ taskId: z.string().regex(/^task_[0-9]+$/) });
+export const lookupTool = { type: "custom" as const, name: "lookup_task",
+  description: "Look up an existing task in the authenticated user's task list. Provide its task_ID identifier. Returns task details, or an error if it is not accessible. This operation does not change tasks.",
+  input_schema: z.toJSONSchema(LookupInput) };
+type Result = { text: string; isError: boolean };
+type Query = (ownerId: string, taskId: string, signal: AbortSignal) => Promise<unknown>;
+export async function dispatch(name: string, input: unknown, ownerId: string, query: Query, timeoutMs = 1000): Promise<Result> {
+  if (name !== lookupTool.name) return { text: "Unknown tool.", isError: true };
+  const parsed = LookupInput.safeParse(input);
+  if (!parsed.success) return { text: "Invalid input: taskId must match task_ followed by digits; no extra fields.", isError: true };
+  if (!ownerId) return { text: "Not authorized.", isError: true };
+  if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) return { text: "Invalid deadline.", isError: true };
+  const controller = new AbortController();
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    const expiry = new Promise<never>((_, reject) => { timer = setTimeout(() => {
+      controller.abort(); reject(new Error("Lookup deadline exceeded."));
+    }, timeoutMs); });
+    const data = await Promise.race([query(ownerId, parsed.data.taskId, controller.signal), expiry]);
+    return { text: JSON.stringify(data) ?? "null", isError: false };
+  } catch { return { text: "Lookup unavailable, denied or timed out.", isError: true }; }
+  finally { if (timer) clearTimeout(timer); }
+}
+export function makeDispatcher(client: Anthropic, sessionId: string, ownerId: string, query: Query) {
+  const records = new Map<string, { state: "executing" | "sending" | "sent" | "uncertain"; result?: Result }>();
+  return { records, async onEvent(event: Event) {
+    if (event.type !== "agent.custom_tool_use" || records.has(event.id)) return;
+    const record: { state: "executing" | "sending" | "sent" | "uncertain"; result?: Result } = { state: "executing" };
+    records.set(event.id, record);
+    record.result = await dispatch(event.name, event.input, ownerId, query);
+    record.state = "sending";
+    try {
+      await client.beta.sessions.events.send(sessionId, { events: [{
+        type: "user.custom_tool_result", custom_tool_use_id: event.id,
+        content: [{ type: "text", text: record.result.text }], is_error: record.result.isError
+      }] }, { maxRetries: 0, timeout: 10000 });
+      record.state = "sent";
+    } catch { record.state = "uncertain"; }
+  } };
+}
+// The authenticated host supplies ownerId; model input cannot choose the tenant.
+// Query must enforce ownership and honor AbortSignal. Race bounds waiting, not arbitrary effects.
+// Persist records/results in production, reconcile lost acknowledgements, and use stable effect
+// keys for mutating tools. This read-only lookup performs no business mutation.
+// Calls can arrive before idle; dispatch on the call rather than requiring session-wide idle.
